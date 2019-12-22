@@ -51,14 +51,14 @@ trait StreamHandler extends LazyLogging {
     val consumerFn = () => client.consumer(ConsumerConfig(subscriptionName=Subscription("mysub"), Seq(intopic)))
     val producerFn = () => client.producer(ProducerConfig(outtopic))
 
-    val control = source(consumerFn, Some(MessageId.earliest))
+    source(consumerFn, Some(MessageId.earliest))
       .map { consumerMessage =>
         println("message => " + consumerMessage.value.map(_.toChar).mkString)
         ProducerMessage(consumerMessage.data) }
       .to(sink(producerFn)).run()
 
 
-    println("end")
+    //println("end")
 
   }
 
