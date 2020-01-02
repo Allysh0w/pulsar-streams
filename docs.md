@@ -1,6 +1,6 @@
 ## PULSAR Docs
 
-#### Consumers subscriptions mode
+#### Consumers subscriptions mode:
 
 
 - Exclusive Mode (default subscription mode): 
