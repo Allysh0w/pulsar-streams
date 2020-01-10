@@ -8,8 +8,10 @@ import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.kafka.common.serialization.StringSerializer
 
 import scala.concurrent.ExecutionContextExecutor
+import scala.concurrent.duration.FiniteDuration
 
 trait Settings {
+
 
   lazy private val appConf = ConfigFactory.load("application.conf")
 
@@ -21,10 +23,12 @@ trait Settings {
   implicit val executionContext: ExecutionContextExecutor = system.dispatcher
 
   val pulsarBroker: String = mainConfig.getString("pulsarBroker")
-  val pulsarTopic: String = mainConfig.getString("pulsarTopic")
+  val pulsarInTopic: String = mainConfig.getString("pulsarInTopic")
+  val pulsarOutTopic: String = mainConfig.getString("pulsarOutTopic")
 
   val kafkaBroker: String = mainConfig.getString("kafkaBroker")
   val kafkaTopic: String = mainConfig.getString("kafkaTopic")
+
 
   def kafkaSettings: Properties = {
     val properties = new Properties()
@@ -36,5 +40,11 @@ trait Settings {
 }
 
 object Settings extends Settings {
+
+  case class BackoffSettings(
+                              minBackoffSeconds: FiniteDuration,
+                              maxBackoffSeconds: FiniteDuration,
+                              randomFactor: Int
+                            )
 
 }

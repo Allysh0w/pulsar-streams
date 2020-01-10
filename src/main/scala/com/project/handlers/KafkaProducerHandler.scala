@@ -31,7 +31,6 @@ trait KafkaProducerHandler extends LazyLogging{
   def buildProducerSettings(kafkaBroker: String,
                             kafkaConfig: Config): ProducerSettings[String, String] = {
 
-
     ProducerSettings.create(kafkaConfig ,new StringSerializer, new StringSerializer)
       .withBootstrapServers(kafkaBroker)
   }
