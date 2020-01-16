@@ -15,6 +15,6 @@ object Main extends App with StreamHandler{
 
   println("prepare to producer..")
   //pulsarProducer("pulsar://localhost:6650")
-  pulsarConsumer("")
+//  pulsarConsumer("")
 
 }

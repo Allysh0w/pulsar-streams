@@ -7,7 +7,7 @@ import com.project.handlers.setup.SetupKafkaConsumer
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.LazyLogging
 
-trait KafkaConsumerHandler extends LazyLogging with SetupKafkaConsumer{
+trait KafkaStreamConsumer extends LazyLogging with SetupKafkaConsumer{
 
 
   protected def streamKafkaConsumer(

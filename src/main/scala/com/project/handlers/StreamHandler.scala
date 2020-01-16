@@ -2,20 +2,26 @@ package com.project.handlers
 
 import java.util.Properties
 
+import akka.{Done, NotUsed}
 import akka.actor.ActorSystem
-import akka.kafka.ConsumerMessage
-import akka.stream.Materializer
-import akka.stream.scaladsl.{RestartSource, Source}
+import akka.kafka.{CommitterSettings, ConsumerMessage, ProducerMessage, ProducerSettings}
+import akka.kafka.scaladsl.Consumer.DrainingControl
+import akka.kafka.scaladsl.{Committer, Consumer, Producer}
+import akka.stream.{ActorMaterializer, Materializer}
+import akka.stream.scaladsl.{Flow, Keep, RestartSource, RunnableGraph, Sink, Source}
 import com.project.settings.Settings.BackoffSettings
 import com.sksamuel.pulsar4s.akka.streams._
-import com.sksamuel.pulsar4s.{ConsumerConfig, MessageId, ProducerConfig, ProducerMessage, PulsarClient, Subscription, Topic}
+import com.sksamuel.pulsar4s.{ConsumerConfig, MessageId, Producer, ProducerConfig, ProducerMessage, PulsarClient, Subscription, Topic}
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.LazyLogging
+import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.apache.pulsar.client.api.Schema
+import com.project.settings.Settings.KafkaConfigProducer
+import com.project.handlers.PulsarKafkaSinkGraphStage
 
 import scala.concurrent.{ExecutionContext, Future}
 
-trait StreamHandler extends LazyLogging with KafkaConsumerHandler {
+trait StreamHandler extends LazyLogging with KafkaStreamConsumer with KafkaProducerHandler {
 
 
   protected def pulsarProducer(brokers: String,
@@ -85,35 +91,80 @@ trait StreamHandler extends LazyLogging with KafkaConsumerHandler {
                                                     ec: ExecutionContext,
                                                     schema: Schema[Array[Byte]]) = {
 
-    val client = PulsarClient(pulsarBrokers)
-    val topic = Topic(pulsarInTopic)
-    val producerFn = () => client.producer(ProducerConfig(topic))
+    //    val client = PulsarClient(pulsarBrokers)
+    //    val topic = Topic(pulsarInTopic)
+    //    val producerFn = () => client.producer(ProducerConfig(topic))
 
     logger.info(s"Starting Kafka consumer on $kafkaBroker, topic $kafkaTopic")
     logger.info(s"Trasfering data from Kafka brokers: [ $kafkaBroker ] topic: $kafkaTopic to Pulsar brokers: [ $pulsarBrokers ] topic: $pulsarInTopic")
 
-    RestartSource.withBackoff(
-      minBackoff = backoffSettings.minBackoffSeconds,
-      maxBackoff = backoffSettings.maxBackoffSeconds,
-      randomFactor = backoffSettings.randomFactor
-    ) { () =>
+    //    RestartSource.withBackoff(
+    //      minBackoff = backoffSettings.minBackoffSeconds,
+    //      maxBackoff = backoffSettings.maxBackoffSeconds,
+    //      randomFactor = backoffSettings.randomFactor
+    //    ) { () =>
 
-      streamKafkaConsumer(kafkaConfig, kafkaBroker, kafkaTopic, kafkaGroupId, kafkaStartupMode)
-        .mapAsync(2) { message =>
-            logger.info(s"Got message: ${message.record.value.map(_.toChar).mkString} from kafka from topic: $kafkaTopic")
- //           Future(ProducerMessage(message.record.value))
-//            Future(message)
- //           .map
-
-        }
-    }
-
-
-
+    streamKafkaConsumer(kafkaConfig, kafkaBroker, kafkaTopic, kafkaGroupId, kafkaStartupMode)
+      .mapAsync(2) { message =>
+        logger.info(s"Got message: ${message.record.value.map(_.toChar).mkString} from kafka from topic: $kafkaTopic")
+        //            Future(ProducerMessage(message.record.value))
+        val mes: ConsumerMessage.CommittableMessage[String, Array[Byte]] = message
+        val a: ConsumerRecord[String, Array[Byte]] = message.record
+        Future(message.record, message)
+      }
+    // }
     //ProducerMessage(message)
+  }
 
+
+  def pulsarProducerFn[M, T](message: T,
+                          pulsarInTopic: String,
+                          pulsarBrokers: String)(implicit schema: Schema[Array[Byte]]) = {
+
+
+    Sink.fromGraph(new PulsarSinkGraphStage(() => PulsarClient(pulsarBrokers).producer(ProducerConfig(Topic(pulsarInTopic)))))
 
   }
+
+  def pulsarProducerGraph[M, T <: ConsumerMessage.CommittableMessage[String, Array[Byte]]](message: (M, T),
+                                pulsarInTopic: String,
+                                pulsarBrokers: String)(implicit schema: Schema[Array[Byte]],
+                                                       mat: ActorMaterializer) = {
+
+    //    val client = PulsarClient(pulsarBrokers).producer(ProducerConfig(Topic(pulsarInTopic)))
+    //    val topic = Topic(pulsarInTopic)
+    //    val producerFn = () => client.producer(ProducerConfig(topic))
+    val producerFn = () => PulsarClient(pulsarBrokers).producer(ProducerConfig(Topic(pulsarInTopic)))
+
+    val b: Sink[ProducerMessage[Array[Byte]], Future[Done]] = Sink.fromGraph(new PulsarSinkGraphStage(() => PulsarClient(pulsarBrokers).producer(ProducerConfig(Topic(pulsarInTopic)))))
+
+    //note: the generic M is always the message from any broker
+    val test = () => (PulsarClient(pulsarBrokers).producer(ProducerConfig(Topic(pulsarInTopic))), message._2)
+
+    Source.single(message)
+      .via(Flow.fromFunction(pulsarProducerMessage))
+      .to(sinkCommitKafkaToPulsar(test))
+      //.to(sink(producerFn))
+
+  }
+
+  def pulsarProducerMessage[M, T <: ConsumerMessage.CommittableMessage[String, Array[Byte]]](message: (M, T)) = {
+    ProducerMessage(message._1)
+  }
+
+  def kafkaCommitableMessage[K, V](message: ConsumerMessage.CommittableMessage[String, Array[Byte]],
+                                   producerSettings: ProducerSettings[K, V])
+                                  (implicit mat: ActorMaterializer,
+                                   system: ActorSystem) = {
+    Source.single(message)
+      .map(_ => message.committableOffset)
+      .toMat(Committer.sink(CommitterSettings(system)))(Keep.both)
+    //      .mapMaterializedValue(DrainingControl.apply)
+  }
+
+
+  def sinkCommitKafkaToPulsar[M, T<: ConsumerMessage.CommittableMessage[String, Array[Byte]]](create: () => (Producer[M], T)) =
+    Sink.fromGraph(new PulsarKafkaSinkGraphStage(create))
 
 
 }
