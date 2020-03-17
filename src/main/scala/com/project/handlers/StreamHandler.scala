@@ -98,11 +98,6 @@ trait StreamHandler extends LazyLogging with KafkaStreamConsumer with KafkaProdu
     logger.info(s"Starting Kafka consumer on $kafkaBroker, topic $kafkaTopic")
     logger.info(s"Trasfering data from Kafka brokers: [ $kafkaBroker ] topic: $kafkaTopic to Pulsar brokers: [ $pulsarBrokers ] topic: $pulsarInTopic")
 
-    //    RestartSource.withBackoff(
-    //      minBackoff = backoffSettings.minBackoffSeconds,
-    //      maxBackoff = backoffSettings.maxBackoffSeconds,
-    //      randomFactor = backoffSettings.randomFactor
-    //    ) { () =>
 
     streamKafkaConsumer(kafkaConfig, kafkaBroker, kafkaTopic, kafkaGroupId, kafkaStartupMode)
       .mapAsync(2) { message =>
@@ -112,7 +107,6 @@ trait StreamHandler extends LazyLogging with KafkaStreamConsumer with KafkaProdu
         val a: ConsumerRecord[String, Array[Byte]] = message.record
         Future(message.record, message)
       }
-    // }
     //ProducerMessage(message)
   }
 
