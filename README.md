@@ -1,4 +1,4 @@
 # pulsar-streams
-Example pulsar with Akka streams
+Apache Pulsar with Akka streams
 
 Simple data transfers from Pulsar <~> Kafka
